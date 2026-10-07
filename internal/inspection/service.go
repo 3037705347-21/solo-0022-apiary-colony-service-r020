@@ -47,11 +47,20 @@ func (s *Service) Record(hiveID string, input RecordInput) (domain.Inspection, e
 		return domain.Inspection{}, err
 	}
 	record.Concerns = DeriveConcerns(record)
-	saved, err := s.store.AddInspection(hiveID, record)
+	saved, err := s.store.AddInspection(hiveID, record, deriveTrend)
 	if err != nil {
 		return domain.Inspection{}, err
 	}
 	return saved, nil
+}
+
+// deriveTrend 在仓储写锁内基于该蜂箱已保存的巡检历史派生趋势与关注级别，
+// 派生结果随记录一起固化，后续补录不会追溯改写已保存的记录。
+func deriveTrend(history []domain.Inspection, current domain.Inspection) domain.Inspection {
+	streak := MiteRiseStreak(history, current)
+	current.Trends = DeriveTrends(streak)
+	current.WatchLevel = DeriveWatchLevel(current, streak)
+	return current
 }
 
 func (s *Service) List(hiveID string) ([]domain.Inspection, error) {

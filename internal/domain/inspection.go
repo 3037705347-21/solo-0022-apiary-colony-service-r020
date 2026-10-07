@@ -18,7 +18,33 @@ const (
 	TemperAggressive Temper = "aggressive"
 )
 
-// Inspection 是一次现场巡检的固化结果，关注项由量测派生。
+// WatchLevel 表示蜂箱的关注级别，由巡检保存时派生并随记录固化。
+type WatchLevel string
+
+const (
+	WatchNone      WatchLevel = "none"
+	WatchRaised    WatchLevel = "watch"
+	WatchEscalated WatchLevel = "escalated"
+)
+
+// Rank 返回关注级别的次序，用于比较级别高低。
+func (l WatchLevel) Rank() int {
+	switch l {
+	case WatchRaised:
+		return 1
+	case WatchEscalated:
+		return 2
+	default:
+		return 0
+	}
+}
+
+// AtLeast 判断当前级别是否达到给定级别。
+func (l WatchLevel) AtLeast(other WatchLevel) bool {
+	return l.Rank() >= other.Rank()
+}
+
+// Inspection 是一次现场巡检的固化结果，关注项、趋势与关注级别由量测派生。
 type Inspection struct {
 	ID             string       `json:"id"`
 	HiveID         string       `json:"hiveId"`
@@ -29,6 +55,8 @@ type Inspection struct {
 	MiteCount      int          `json:"miteCount"`
 	Note           string       `json:"note"`
 	Concerns       []string     `json:"concerns"`
+	Trends         []string     `json:"trends"`
+	WatchLevel     WatchLevel   `json:"watchLevel"`
 }
 
 const (
@@ -78,6 +106,8 @@ func NewInspection(
 		MiteCount:      miteCount,
 		Note:           TrimText(note),
 		Concerns:       []string{},
+		Trends:         []string{},
+		WatchLevel:     WatchNone,
 	}, nil
 }
 

@@ -18,6 +18,7 @@
     {"workflow_id": "record-inspection", "command": "go run ./cmd/check -workflow record-inspection"},
     {"workflow_id": "replace-queen", "command": "go run ./cmd/check -workflow replace-queen"},
     {"workflow_id": "advance-hive-state", "command": "go run ./cmd/check -workflow advance-hive-state"},
-    {"workflow_id": "read-apiary-status", "command": "go run ./cmd/check -workflow read-apiary-status"}
+    {"workflow_id": "read-apiary-status", "command": "go run ./cmd/check -workflow read-apiary-status"},
+    {"workflow_id": "inspection-watch-trend", "command": "go run ./cmd/check -workflow inspection-watch-trend"}
   ]
 }

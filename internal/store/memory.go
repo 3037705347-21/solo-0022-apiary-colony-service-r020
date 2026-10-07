@@ -91,7 +91,13 @@ func (m *Memory) AdvanceHive(hiveID string, target domain.HiveState, _ time.Time
 
 // AddInspection 分配巡检编号、写入记录，并推进蜂箱的最近巡检时间。
 // 蜂箱存在与可接受巡检的判定与写入处于同一把锁，避免退役与巡检之间的竞态。
-func (m *Memory) AddInspection(hiveID string, inspection domain.Inspection) (domain.Inspection, error) {
+// derive 在同一把写锁内基于该蜂箱已保存的巡检历史为本次记录派生趋势，
+// 并发提交因此被串行化，趋势不会断裂或重复计算。
+func (m *Memory) AddInspection(
+	hiveID string,
+	inspection domain.Inspection,
+	derive func(history []domain.Inspection, record domain.Inspection) domain.Inspection,
+) (domain.Inspection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	hive, ok := m.hives[hiveID]
@@ -104,11 +110,17 @@ func (m *Memory) AddInspection(hiveID string, inspection domain.Inspection) (dom
 	m.inspectionSeq++
 	inspection.ID = fmt.Sprintf("inspection-%06d", m.inspectionSeq)
 	inspection.HiveID = hiveID
+	if derive != nil {
+		inspection = derive(m.inspections[hiveID], inspection)
+	}
 	m.inspections[hiveID] = append(m.inspections[hiveID], inspection)
 
-	observedAt := inspection.ObservedAt
-	hive.LastInspectionAt = &observedAt
-	m.hives[hiveID] = hive
+	// 最近巡检时间只随更晚的观察推进，补录更早的巡检不会让它倒退。
+	if hive.LastInspectionAt == nil || inspection.ObservedAt.After(*hive.LastInspectionAt) {
+		observedAt := inspection.ObservedAt
+		hive.LastInspectionAt = &observedAt
+		m.hives[hiveID] = hive
+	}
 	return inspection, nil
 }
 
@@ -210,6 +222,7 @@ func (m *Memory) Snapshot() Snapshot {
 		copy(copied, items)
 		for index := range copied {
 			copied[index].Concerns = append([]string{}, items[index].Concerns...)
+			copied[index].Trends = append([]string{}, items[index].Trends...)
 		}
 		snapshot.InspectionsByHive[id] = copied
 	}

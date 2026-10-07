@@ -15,6 +15,8 @@ type HiveSummary struct {
 	State            string     `json:"state"`
 	LastInspectionAt *time.Time `json:"lastInspectionAt"`
 	LatestConcerns   []string   `json:"latestConcerns"`
+	LatestTrends     []string   `json:"latestTrends"`
+	WatchLevel       string     `json:"watchLevel"`
 	QueenID          string     `json:"queenId"`
 	QueenMarkColor   string     `json:"queenMarkColor"`
 }
@@ -27,6 +29,7 @@ type Report struct {
 	StateCounts     map[string]int `json:"stateCounts"`
 	NeedsInspection []string       `json:"needsInspection"`
 	ConcernHives    []string       `json:"concernHives"`
+	EscalatedHives  []string       `json:"escalatedHives"`
 	LayingQueens    int            `json:"layingQueens"`
 	Hives           []HiveSummary  `json:"hives"`
 }
@@ -41,6 +44,7 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 		StateCounts:     initialStateCounts(),
 		NeedsInspection: []string{},
 		ConcernHives:    []string{},
+		EscalatedHives:  []string{},
 		Hives:           []HiveSummary{},
 	}
 	hives := snapshot.ApiaryHives(apiary.ID)
@@ -52,6 +56,8 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 			State:            string(hive.State),
 			LastInspectionAt: hive.LastInspectionAt,
 			LatestConcerns:   []string{},
+			LatestTrends:     []string{},
+			WatchLevel:       string(domain.WatchNone),
 		}
 		if queen, ok := snapshot.LayingQueen(hive.ID); ok {
 			summary.QueenID = queen.ID
@@ -63,7 +69,17 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 			summary.LastInspectionAt = &observedAt
 			if len(latest.Concerns) > 0 {
 				summary.LatestConcerns = append([]string{}, latest.Concerns...)
+			}
+			if len(latest.Trends) > 0 {
+				summary.LatestTrends = append([]string{}, latest.Trends...)
+			}
+			// 关注级别直接采用最新巡检上固化的派生结果，保证与趋势一致。
+			summary.WatchLevel = string(latest.WatchLevel)
+			if latest.WatchLevel.AtLeast(domain.WatchRaised) {
 				report.ConcernHives = append(report.ConcernHives, hive.ID)
+			}
+			if latest.WatchLevel == domain.WatchEscalated {
+				report.EscalatedHives = append(report.EscalatedHives, hive.ID)
 			}
 		}
 		if NeedsInspection(hive, asOf) {
@@ -73,6 +89,7 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 	}
 	sort.Strings(report.NeedsInspection)
 	sort.Strings(report.ConcernHives)
+	sort.Strings(report.EscalatedHives)
 	return report
 }
 

@@ -10,7 +10,7 @@
 - `internal/domain`：实体、枚举、校验与蜂群状态迁移表。
 - `internal/store`：并发安全的内存仓储与一致性快照。
 - `internal/apiary`：蜂场与蜂箱录入、蜂箱状态迁移。
-- `internal/inspection`：巡检接收与关注项判定。
+- `internal/inspection`：巡检接收与关注项、趋势及关注级别判定。
 - `internal/queen`：蜂王更换与标记色推导。
 - `internal/status`：蜂场状态汇总聚合。
 - `internal/httpapi`：路由、请求解析与响应映射。
@@ -47,13 +47,13 @@ go run ./cmd/check -workflow read-apiary-status
 - `GET /hives/{hiveId}`：读回蜂箱。
 - `POST /hives/{hiveId}/state`：输入 `target`，返回迁移前后的状态。
 - `POST /hives/{hiveId}/inspections`：输入 `observedAt`（可选，RFC3339）、`colonyStrength`、
-  `broodPattern`、`temper`、`miteCount`、`note`，返回巡检与派生关注项。
+  `broodPattern`、`temper`、`miteCount`、`note`，返回巡检与派生关注项、趋势及关注级别。
 - `GET /hives/{hiveId}/inspections`：列出巡检。
 - `POST /hives/{hiveId}/queens`：输入 `origin`、`introducedAt`（可选）、`reason`，
   返回带标记色的新蜂王记录。
 - `GET /hives/{hiveId}/queens`：列出蜂王记录。
 - `GET /apiaries/{apiaryId}/status`：可选查询参数 `asOf`（RFC3339），返回状态计数、
-  待巡检蜂箱、有未处理关注项的蜂箱与逐蜂箱摘要。
+  待巡检蜂箱、有未处理关注项的蜂箱、已升级蜂箱与逐蜂箱摘要（含趋势与关注级别）。
 
 错误响应统一为：
 
@@ -72,6 +72,11 @@ go run ./cmd/check -workflow read-apiary-status
 - 蜂王标记色由引入年份个位推导：`1/6` 白、`2/7` 黄、`3/8` 红、`4/9` 绿、`5/0` 蓝。
 - 巡检关注项阈值：螨计数 ≥ 9 记 `mite_load`，子脾为 `none` 记 `brood_gap`，
   性情为 `aggressive` 记 `temper_risk`，群势 ≤ 2 记 `low_strength`。
+- 螨计数连续上升 2 次派生趋势 `mite_rising`，关注级别提升为 `watch`；连续上升 3 次
+  且本次螨计数 ≥ 4（中等区间）时升级为 `escalated`，并在状态汇总的 `escalatedHives`
+  中对协调人可见。
+- 趋势与关注级别在巡检保存时基于已保存的巡检事实派生并随记录固化：补录更早的巡检
+  不会抹掉已经发生的升级，重复或并发提交不会让趋势断裂或重复计算。
 - 待巡检：从未巡检，或距 `asOf` 超过 14 天。
 
 ## 环境变量
@@ -89,6 +94,7 @@ go run ./cmd/check -workflow record-inspection
 go run ./cmd/check -workflow replace-queen
 go run ./cmd/check -workflow advance-hive-state
 go run ./cmd/check -workflow read-apiary-status
+go run ./cmd/check -workflow inspection-watch-trend
 ```
 
 ## 测试边界
