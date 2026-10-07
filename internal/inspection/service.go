@@ -7,7 +7,7 @@ import (
 	"example.com/apiary-colony-service/internal/store"
 )
 
-// Service 接收巡检、完成范围校验并派生关注项。
+// Service 接收巡检、完成范围校验并派生关注项与螨计数趋势。
 type Service struct {
 	store *store.Memory
 	clock func() time.Time
@@ -29,7 +29,16 @@ type RecordInput struct {
 	Note           string
 }
 
-func (s *Service) Record(hiveID string, input RecordInput) (domain.Inspection, error) {
+// RecordResult 是一次巡检提交后可观察到的全部结果：
+// 巡检事实、与汇总一致的趋势状态，以及本次是否触发了关注级别升级。
+type RecordResult struct {
+	Inspection domain.Inspection
+	Trend      domain.HiveTrend
+	Escalated  bool
+	Escalation domain.TrendEscalation
+}
+
+func (s *Service) Record(hiveID string, input RecordInput) (RecordResult, error) {
 	observedAt := input.ObservedAt
 	if observedAt.IsZero() {
 		observedAt = s.clock()
@@ -44,14 +53,19 @@ func (s *Service) Record(hiveID string, input RecordInput) (domain.Inspection, e
 		input.Note,
 	)
 	if err != nil {
-		return domain.Inspection{}, err
+		return RecordResult{}, err
 	}
 	record.Concerns = DeriveConcerns(record)
-	saved, err := s.store.AddInspection(hiveID, record)
+	saved, err := s.store.AddInspection(hiveID, record, s.clock())
 	if err != nil {
-		return domain.Inspection{}, err
+		return RecordResult{}, err
 	}
-	return saved, nil
+	return RecordResult{
+		Inspection: saved.Inspection,
+		Trend:      saved.Trend,
+		Escalated:  saved.Escalated,
+		Escalation: saved.Escalation,
+	}, nil
 }
 
 func (s *Service) List(hiveID string) ([]domain.Inspection, error) {

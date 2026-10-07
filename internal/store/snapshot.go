@@ -12,6 +12,8 @@ type Snapshot struct {
 	Hives             map[string]domain.Hive
 	InspectionsByHive map[string][]domain.Inspection
 	QueensByHive      map[string][]domain.Queen
+	TrendsByHive      map[string]domain.HiveTrend
+	EscalationsByHive map[string][]domain.TrendEscalation
 }
 
 // ApiaryHives 返回蜂场下的蜂箱，按编号升序稳定排序。
@@ -58,6 +60,32 @@ func (s Snapshot) LayingQueen(hiveID string) (domain.Queen, bool) {
 func (s Snapshot) Queens(hiveID string) []domain.Queen {
 	items := s.QueensByHive[hiveID]
 	out := make([]domain.Queen, len(items))
+	copy(out, items)
+	return out
+}
+
+// HiveTrend 返回提交巡检时固化的趋势状态；没有巡检的蜂箱得到 unknown 空趋势。
+// 汇总与提交响应都经由这里读取，保证两侧看到的趋势与关注级别一致。
+func (s Snapshot) HiveTrend(hiveID string) (domain.HiveTrend, bool) {
+	trend, ok := s.TrendsByHive[hiveID]
+	if !ok && len(s.InspectionsByHive[hiveID]) == 0 {
+		return domain.HiveTrend{HiveID: hiveID, Attention: domain.AttentionNormal}, false
+	}
+	if !ok {
+		latest, _ := s.LatestInspection(hiveID)
+		trend = domain.HiveTrend{
+			HiveID:    hiveID,
+			Mite:      domain.DeriveMiteTrend(s.InspectionsByHive[hiveID]),
+			Attention: domain.ResolveAttention(latest.Concerns, false),
+		}
+	}
+	return trend, true
+}
+
+// Escalations 返回蜂箱已发生的趋势升级，顺序与追加顺序一致。
+func (s Snapshot) Escalations(hiveID string) []domain.TrendEscalation {
+	items := s.EscalationsByHive[hiveID]
+	out := make([]domain.TrendEscalation, len(items))
 	copy(out, items)
 	return out
 }

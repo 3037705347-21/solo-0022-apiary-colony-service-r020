@@ -11,12 +11,14 @@ import (
 const InspectionWindow = 14 * 24 * time.Hour
 
 type HiveSummary struct {
-	HiveID           string     `json:"hiveId"`
-	State            string     `json:"state"`
-	LastInspectionAt *time.Time `json:"lastInspectionAt"`
-	LatestConcerns   []string   `json:"latestConcerns"`
-	QueenID          string     `json:"queenId"`
-	QueenMarkColor   string     `json:"queenMarkColor"`
+	HiveID           string                `json:"hiveId"`
+	State            string                `json:"state"`
+	LastInspectionAt *time.Time            `json:"lastInspectionAt"`
+	LatestConcerns   []string              `json:"latestConcerns"`
+	QueenID          string                `json:"queenId"`
+	QueenMarkColor   string                `json:"queenMarkColor"`
+	AttentionLevel   domain.AttentionLevel `json:"attentionLevel"`
+	Trend            domain.HiveTrend      `json:"trend"`
 }
 
 type Report struct {
@@ -27,11 +29,14 @@ type Report struct {
 	StateCounts     map[string]int `json:"stateCounts"`
 	NeedsInspection []string       `json:"needsInspection"`
 	ConcernHives    []string       `json:"concernHives"`
+	EscalatedHives  []string       `json:"escalatedHives"`
 	LayingQueens    int            `json:"layingQueens"`
 	Hives           []HiveSummary  `json:"hives"`
 }
 
 // BuildReport 在单份快照上完成聚合，保证计数与逐蜂箱摘要来自同一视图。
+// 每个蜂箱的关注级别直接读取提交巡检时固化的同一份趋势状态，
+// 因此「趋势」与「汇总中的关注级别」不可能出现分叉。
 func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) Report {
 	asOf = asOf.UTC()
 	report := Report{
@@ -41,6 +46,7 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 		StateCounts:     initialStateCounts(),
 		NeedsInspection: []string{},
 		ConcernHives:    []string{},
+		EscalatedHives:  []string{},
 		Hives:           []HiveSummary{},
 	}
 	hives := snapshot.ApiaryHives(apiary.ID)
@@ -52,6 +58,12 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 			State:            string(hive.State),
 			LastInspectionAt: hive.LastInspectionAt,
 			LatestConcerns:   []string{},
+			AttentionLevel:   domain.AttentionNormal,
+		}
+		summary.Trend = domain.HiveTrend{
+			HiveID:    hive.ID,
+			Mite:      domain.MiteTrend{Direction: domain.MiteTrendUnknown},
+			Attention: domain.AttentionNormal,
 		}
 		if queen, ok := snapshot.LayingQueen(hive.ID); ok {
 			summary.QueenID = queen.ID
@@ -66,6 +78,13 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 				report.ConcernHives = append(report.ConcernHives, hive.ID)
 			}
 		}
+		if trend, ok := snapshot.HiveTrend(hive.ID); ok {
+			summary.Trend = trend
+			summary.AttentionLevel = trend.Attention
+			if trend.Attention == domain.AttentionEscalated {
+				report.EscalatedHives = append(report.EscalatedHives, hive.ID)
+			}
+		}
 		if NeedsInspection(hive, asOf) {
 			report.NeedsInspection = append(report.NeedsInspection, hive.ID)
 		}
@@ -73,6 +92,7 @@ func BuildReport(snapshot store.Snapshot, apiary domain.Apiary, asOf time.Time) 
 	}
 	sort.Strings(report.NeedsInspection)
 	sort.Strings(report.ConcernHives)
+	sort.Strings(report.EscalatedHives)
 	return report
 }
 
